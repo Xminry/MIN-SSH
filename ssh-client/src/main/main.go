@@ -43,8 +43,11 @@ package main
 //}
 
 import (
+	"MINTCP/socket"
 	"bufio"
 	"fmt"
+	"minlib/common"
+	"minlib/security"
 	"net"
 	"os"
 	"ssh-client/src/main/process"
@@ -53,11 +56,33 @@ import (
 )
 
 func main() {
-	conn, err := net.Dial("tcp","www.involute.cn:8765")
+	/*conn, err := net.Dial("tcp", "0.0.0.0:8765")
 	if err != nil {
-		fmt.Println("客户端连接失败，错误：",err)
+		fmt.Println("客户端连接失败，错误：", err)
 		return
+	}*/
+
+	common.InitLogger(&common.LoggerParameters{
+		ReportCaller: true,
+		LogLevel:     "ALL",
+		LogFormat:    "text",
+	})
+	keyChain := new(security.KeyChain)
+	if err := keyChain.Init(); err != nil {
+		common.LogFatal(err)
 	}
+	identity := keyChain.GetIdentityByName("/localhost/operator")
+
+	// TODO: require identity is unlock, if it's locked, please do unlock first
+	conn, err := socket.Dial("min-push-tcp", identity, &socket.IdentifierAddr{
+		Name: "/localhost/operator",
+		Port: 80,
+	}, "unix", "/tmp/mir-tcp-message-channel-stack.sock",
+		"/tmp/mir-tcp-bytes-channel-stack.sock")
+	if err != nil {
+		common.LogFatal("》", err)
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Println("服务器连接成功")
 	sshReaderWriter := _struct.NewSshReaderWriter(conn)
@@ -65,9 +90,9 @@ func main() {
 	//密钥交换阶段
 	p := 7000487615661733
 	g := 5925845745820835
-	key, err := process.Dh(p,g,sshReaderWriter)
+	key, err := process.Dh(p, g, sshReaderWriter)
 	if err != nil {
-		fmt.Println("客户端会话密钥阶段异常，请重试",err)
+		fmt.Println("客户端会话密钥阶段异常，请重试", err)
 		return
 	}
 	//输出key，临时
@@ -87,13 +112,12 @@ func main() {
 		fmt.Println("Error reading:", err.Error())
 		return
 	}
-	sshReaderWriter.Write([]byte(userName+"\n"))
-	sshReaderWriter.Write([]byte(password+"\n"))
+	sshReaderWriter.Write([]byte(userName + "\n"))
+	sshReaderWriter.Write([]byte(password + "\n"))
 	//这里开始，登录完成，会话阶段使用key加密
 	sshReaderWriter.SetKey(key)
 
 	go handleConnectionReader(conn)
-
 
 	fmt.Printf("> ")
 	for {
@@ -107,10 +131,10 @@ func main() {
 			break
 		}
 
-		if strings.HasPrefix(input,"cd") || strings.HasPrefix(input,"chmod"){
+		if strings.HasPrefix(input, "cd") || strings.HasPrefix(input, "chmod") {
 			sshReaderWriter.Write([]byte(input))
 			sshReaderWriter.Write([]byte("pwd\n"))
-		}else{
+		} else {
 			sshReaderWriter.Write([]byte(input))
 		}
 		sshReaderWriter.Write([]byte("whoami\n"))
@@ -121,7 +145,7 @@ func main() {
 
 func handleConnectionReader(c net.Conn) {
 	//sshReaderWriter := _struct.NewSshReaderWriter(c)
-	count :=0
+	count := 0
 	result := ""
 	for {
 		buf := make([]byte, 1024)
@@ -130,18 +154,18 @@ func handleConnectionReader(c net.Conn) {
 			fmt.Println("Error reading:", err.Error())
 			os.Exit(1)
 		}
-		if string(buf[:n])=="登录成功！"{
+		if string(buf[:n]) == "登录成功！" {
 			fmt.Printf("%s", buf[:n])
 			fmt.Print("\n>")
-			count=0
-		}else{
-			if count==0{
+			count = 0
+		} else {
+			if count == 0 {
 				fmt.Printf("%s", buf[:n])
 				count++
-			}else if count==1{
+			} else if count == 1 {
 				result = result + "[" + string(buf[:n-1])
 				count++
-			}else {
+			} else {
 				result = result + " " + string(buf[:n-1])
 				count = 0
 				fmt.Print(result + "]>")
@@ -150,10 +174,3 @@ func handleConnectionReader(c net.Conn) {
 		}
 	}
 }
-
-
-
-
-
-
-
